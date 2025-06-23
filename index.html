@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIC16F887 Sensor Hub</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Auto-refresh data every 5 seconds
+        const refreshInterval = 5000;
+        let connectionStatus = 'disconnected';
+        let temperatureChart, humidityChart;
+        let tempHistory = [];
+        let humidityHistory = [];
+        let timeLabels = [];
+        const maxDataPoints = 20;
+        
+        // Theme management
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeToggle(savedTheme);
+        }
+        
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeToggle(newTheme);
+        }
+        
+        function updateThemeToggle(theme) {
+            const themeIcon = document.getElementById('theme-icon');
+            const themeText = document.getElementById('theme-text');
+            
+            if (theme === 'dark') {
+                themeIcon.className = 'fas fa-sun';
+                themeText.textContent = 'Light';
+            } else {
+                themeIcon.className = 'fas fa-moon';
+                themeText.textContent = 'Dark';
+            }
+        }
+        
+        function initCharts() {
+            // Temperature chart
+            const tempCtx = document.getElementById('temperatureChart').getContext('2d');
+            temperatureChart = new Chart(tempCtx, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [
+                        {
+                            label: 'LM35 Temperature',
+                            data: [],
+                            borderColor: '#ff6b6b',
+                            backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'SHT21 Temperature',
+                            data: [],
+                            borderColor: '#4ecdc4',
+                            backgroundColor: 'rgba(78, 205, 196, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'top' }
+                    },
+                    scales: {
+                        y: { beginAtZero: false, title: { display: true, text: 'Temperature (°C)' } },
+                        x: { title: { display: true, text: 'Time' } }
+                    }
+                }
+            });
+            
+            // Humidity chart
+            const humidCtx = document.getElementById('humidityChart').getContext('2d');
+            humidityChart = new Chart(humidCtx, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [
+                        {
+                            label: 'HIH-5030 Humidity',
+                            data: [],
+                            borderColor: '#45b7d1',
+                            backgroundColor: 'rgba(69, 183, 209, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'SHT21 Humidity',
+                            data: [],
+                            borderColor: '#96ceb4',
+                            backgroundColor: 'rgba(150, 206, 180, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'top' }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, max: 100, title: { display: true, text: 'Humidity (%)' } },
+                        x: { title: { display: true, text: 'Time' } }
+                    }
+                }
+            });
+        }
+        
+        function updateCharts(data) {
+            const currentTime = new Date().toLocaleTimeString();
+            
+            // Update time labels
+            timeLabels.push(currentTime);
+            if (timeLabels.length > maxDataPoints) {
+                timeLabels.shift();
+            }
+            
+            // Update temperature data
+            if (data.lm35_valid) {
+                temperatureChart.data.datasets[0].data.push(data.lm35_temp);
+            } else {
+                temperatureChart.data.datasets[0].data.push(null);
+            }
+            
+            if (data.sht_temp_valid) {
+                temperatureChart.data.datasets[1].data.push(data.sht_temp);
+            } else {
+                temperatureChart.data.datasets[1].data.push(null);
+            }
+            
+            // Update humidity data
+            if (data.hih_valid) {
+                humidityChart.data.datasets[0].data.push(data.hih_humid);
+            } else {
+                humidityChart.data.datasets[0].data.push(null);
+            }
+            
+            if (data.sht_humid_valid) {
+                humidityChart.data.datasets[1].data.push(data.sht_humid);
+            } else {
+                humidityChart.data.datasets[1].data.push(null);
+            }
+            
+            // Remove old data points
+            if (temperatureChart.data.datasets[0].data.length > maxDataPoints) {
+                temperatureChart.data.datasets[0].data.shift();
+                temperatureChart.data.datasets[1].data.shift();
+                humidityChart.data.datasets[0].data.shift();
+                humidityChart.data.datasets[1].data.shift();
+            }
+            
+            // Update charts
+            temperatureChart.data.labels = timeLabels;
+            humidityChart.data.labels = timeLabels;
+            temperatureChart.update('none');
+            humidityChart.update('none');
+        }
+        
+        function updateConnectionStatus(status) {
+            connectionStatus = status;
+            const statusElement = document.getElementById('connection-status');
+            const statusIcon = document.getElementById('status-icon');
+            
+            if (status === 'connected') {
+                statusElement.textContent = 'Connected';
+                statusElement.className = 'connection-status connected';
+                statusIcon.className = 'fas fa-wifi';
+            } else {
+                statusElement.textContent = 'Disconnected';
+                statusElement.className = 'connection-status disconnected';
+                statusIcon.className = 'fas fa-wifi-slash';
+            }
+        }
+        
+        function createGaugeChart(canvasId, value, max, unit, color) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const radius = 80;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Background arc
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0.75 * Math.PI, 0.25 * Math.PI);
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 20;
+            ctx.stroke();
+            
+            // Value arc
+            const angle = 0.75 * Math.PI + (value / max) * 1.5 * Math.PI;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0.75 * Math.PI, angle);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 20;
+            ctx.stroke();
+            
+            // Value text
+            ctx.fillStyle = '#333';
+            ctx.font = 'bold 24px Inter';
+            ctx.textAlign = 'center';
+            ctx.fillText(value.toFixed(1) + unit, centerX, centerY + 10);
+        }
+        
+        function updateSensorData() {
+            fetch('/sensorData')
+                .then(response => {
+                    if (!response.ok) throw new Error('Network error');
+                    return response.json();
+                })
+                .then(data => {
+                    updateConnectionStatus('connected');
+                    
+                    // Update analog sensor data
+                    updateSensorCard('lm35', data.lm35_valid, data.lm35_temp, '°C', 1);
+                    updateSensorCard('hih', data.hih_valid, data.hih_humid, '%', 0);
+                    updateSensorCard('ldr', data.light_valid, data.light, '%', 0);
+                    
+                    // Update digital sensor data
+                    updateSensorCard('sht-temp', data.sht_temp_valid, data.sht_temp, '°C', 1);
+                    updateSensorCard('sht-humid', data.sht_humid_valid, data.sht_humid, '%', 0);
+                    
+                    // Update light visualization
+                    if (data.light_valid) {
+                        const lightLevel = Math.min(100, Math.max(0, data.light));
+                        document.getElementById('light-indicator').style.width = lightLevel + '%';
+                        document.getElementById('light-percentage').textContent = lightLevel.toFixed(0) + '%';
+                        
+                        // Update light gauge
+                        createGaugeChart('lightGauge', lightLevel, 100, '%', '#ffd93d');
+                    }
+                    
+                    // Update temperature gauges
+                    if (data.lm35_valid) {
+                        createGaugeChart('lm35Gauge', data.lm35_temp, 50, '°C', '#ff6b6b');
+                    }
+                    if (data.sht_temp_valid) {
+                        createGaugeChart('shtTempGauge', data.sht_temp, 50, '°C', '#4ecdc4');
+                    }
+                    
+                    // Update charts
+                    updateCharts(data);
+                    
+                    // Update statistics
+                    updateStatistics(data);
+                    
+                    // Update last update time
+                    const lastUpdateTime = new Date().toLocaleTimeString();
+                    document.getElementById('last-update').textContent = lastUpdateTime;
+                })
+                .catch(error => {
+                    console.error('Error fetching sensor data:', error);
+                    updateConnectionStatus('disconnected');
+                });
+        }
+        
+        function updateSensorCard(sensorId, isValid, value, unit, decimals) {
+            const valueElement = document.getElementById(sensorId + '-value');
+            const statusElement = document.getElementById(sensorId + '-status');
+            const cardElement = document.querySelector(`[data-sensor="${sensorId}"]`);
+            
+            if (isValid) {
+                valueElement.textContent = value.toFixed(decimals) + unit;
+                statusElement.textContent = 'Online';
+                statusElement.className = 'sensor-status status-ok';
+                cardElement.classList.remove('error');
+            } else {
+                valueElement.textContent = 'N/A';
+                statusElement.textContent = 'Error';
+                statusElement.className = 'sensor-status status-error';
+                cardElement.classList.add('error');
+            }
+        }
+        
+        function updateStatistics(data) {
+            // Calculate averages (simplified - in real app would use historical data)
+            let tempSum = 0, tempCount = 0;
+            let humidSum = 0, humidCount = 0;
+            
+            if (data.lm35_valid) { tempSum += data.lm35_temp; tempCount++; }
+            if (data.sht_temp_valid) { tempSum += data.sht_temp; tempCount++; }
+            if (data.hih_valid) { humidSum += data.hih_humid; humidCount++; }
+            if (data.sht_humid_valid) { humidSum += data.sht_humid; humidCount++; }
+            
+            document.getElementById('avg-temp').textContent = tempCount > 0 ? (tempSum / tempCount).toFixed(1) + '°C' : 'N/A';
+            document.getElementById('avg-humid').textContent = humidCount > 0 ? (humidSum / humidCount).toFixed(0) + '%' : 'N/A';
+            document.getElementById('light-level').textContent = data.light_valid ? data.light.toFixed(0) + '%' : 'N/A';
+        }
+        
+        // Initial setup when page loads
+        window.onload = function() {
+            initTheme();
+            initCharts();
+            updateSensorData();
+            setInterval(updateSensorData, refreshInterval);
+            
+            // Add click handlers for tabs
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const target = btn.dataset.tab;
+                    
+                    // Update active tab
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    
+                    // Update active content
+                    document.querySelectorAll('.tab-content').forEach(content => {
+                        content.classList.remove('active');
+                    });
+                    document.getElementById(target).classList.add('active');
+                });
+            });
+        };
+    </script>
+</head>
+<body>
+    <!-- GTA 6 Inspired Background Blobs -->
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+    
+    <div class="container">
+        <header class="dashboard-header">
+            <div class="header-content">
+                <div class="header-left">
+                    <h1><i class="fas fa-microchip"></i> PIC16F887 Sensor Hub</h1>
+                    <p>Real-time environmental monitoring system</p>
+                </div>
+                <div class="header-right">
+                    <div class="theme-toggle" onclick="toggleTheme()">
+                        <i id="theme-icon" class="fas fa-moon"></i>
+                        <span id="theme-text">Dark</span>
+                    </div>
+                    <div class="connection-indicator">
+                        <i id="status-icon" class="fas fa-wifi-slash"></i>
+                        <span id="connection-status" class="connection-status disconnected">Disconnected</span>
+                    </div>
+                    <div class="last-update">
+                        <i class="fas fa-clock"></i>
+                        <span>Last update: <span id="last-update">--</span></span>
+                    </div>
+                </div>
+            </div>
+        </header>
+        
+        <nav class="tab-navigation">
+            <button class="tab-btn active" data-tab="overview">
+                <i class="fas fa-tachometer-alt"></i> Overview
+            </button>
+            <button class="tab-btn" data-tab="charts">
+                <i class="fas fa-chart-line"></i> Charts
+            </button>
+            <button class="tab-btn" data-tab="gauges">
+                <i class="fas fa-gauge"></i> Gauges
+            </button>
+        </nav>
+        
+        <div id="overview" class="tab-content active">
+            <section class="stats-overview">
+                <div class="stat-card">
+                    <i class="fas fa-thermometer-half"></i>
+                    <div class="stat-content">
+                        <h3>Avg Temperature</h3>
+                        <span id="avg-temp" class="stat-value">--</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-tint"></i>
+                    <div class="stat-content">
+                        <h3>Avg Humidity</h3>
+                        <span id="avg-humid" class="stat-value">--</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-sun"></i>
+                    <div class="stat-content">
+                        <h3>Light Level</h3>
+                        <span id="light-level" class="stat-value">--</span>
+                    </div>
+                </div>
+            </section>
+            
+            <section class="sensor-sections">
+                <div class="sensor-section analog-sensors">
+                    <h2><i class="fas fa-wave-square"></i> Analog Sensors</h2>
+                    <div class="sensor-grid">
+                        <div class="sensor-card" data-sensor="lm35">
+                            <div class="sensor-header">
+                                <i class="fas fa-thermometer-three-quarters"></i>
+                                <h3>LM35 Temperature</h3>
+                            </div>
+                            <div class="sensor-value" id="lm35-value">--</div>
+                            <div id="lm35-status" class="sensor-status">--</div>
+                        </div>
+                        
+                        <div class="sensor-card" data-sensor="hih">
+                            <div class="sensor-header">
+                                <i class="fas fa-tint"></i>
+                                <h3>HR202 Humidity</h3>
+                            </div>
+                            <div class="sensor-value" id="hih-value">--</div>
+                            <div id="hih-status" class="sensor-status">--</div>
+                        </div>
+                        
+                        <div class="sensor-card light-card" data-sensor="ldr">
+                            <div class="sensor-header">
+                                <i class="fas fa-lightbulb"></i>
+                                <h3>Light Level (LDR)</h3>
+                            </div>
+                            <div class="sensor-value" id="ldr-value">--</div>
+                            <div class="light-visualization">
+                                <div class="light-bar">
+                                    <div class="light-indicator" id="light-indicator"></div>
+                                </div>
+                                <span id="light-percentage">0%</span>
+                            </div>
+                            <div id="ldr-status" class="sensor-status">--</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="sensor-section digital-sensors">
+                    <h2><i class="fas fa-microchip"></i> Digital Sensors (SHT21)</h2>
+                    <div class="sensor-grid">
+                        <div class="sensor-card" data-sensor="sht-temp">
+                            <div class="sensor-header">
+                                <i class="fas fa-thermometer-half"></i>
+                                <h3>SHT21 Temperature</h3>
+                            </div>
+                            <div class="sensor-value" id="sht-temp-value">--</div>
+                            <div id="sht-temp-status" class="sensor-status">--</div>
+                        </div>
+                        
+                        <div class="sensor-card" data-sensor="sht-humid">
+                            <div class="sensor-header">
+                                <i class="fas fa-water"></i>
+                                <h3>SHT21 Humidity</h3>
+                            </div>
+                            <div class="sensor-value" id="sht-humid-value">--</div>
+                            <div id="sht-humid-status" class="sensor-status">--</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+        
+        <div id="charts" class="tab-content">
+            <section class="charts-section">
+                <div class="chart-container">
+                    <h3><i class="fas fa-thermometer-half"></i> Temperature History</h3>
+                    <canvas id="temperatureChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3><i class="fas fa-tint"></i> Humidity History</h3>
+                    <canvas id="humidityChart"></canvas>
+                </div>
+            </section>
+        </div>
+        
+        <div id="gauges" class="tab-content">
+            <section class="gauges-section">
+                <div class="gauge-container">
+                    <h3>LM35 Temperature</h3>
+                    <canvas id="lm35Gauge" width="200" height="200"></canvas>
+                </div>
+                <div class="gauge-container">
+                    <h3>SHT21 Temperature</h3>
+                    <canvas id="shtTempGauge" width="200" height="200"></canvas>
+                </div>
+                <div class="gauge-container">
+                    <h3>Light Level</h3>
+                    <canvas id="lightGauge" width="200" height="200"></canvas>
+                </div>
+            </section>
+        </div>
+        
+        <footer class="dashboard-footer">
+            <div class="footer-content">
+                <p>&copy; 2025 PIC16F887 Sensor Hub - Environmental Monitoring System</p>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>

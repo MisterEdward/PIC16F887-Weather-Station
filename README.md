@@ -8,6 +8,7 @@ Sistema de monitorizare meteo folosind microcontroller-ul PIC16F887 cu senzori m
 - **Senzor digital**: SHT21 (temperatură/umiditate via I2C)
 - **Display**: LCD 16x2 cu mai multe moduri de afișare
 - **Comunicare**: UART cu ESP32 pentru sincronizare timp și transmitere date
+- **WebUI**: Interfață web pentru monitorizare în timp real
 - **Alarmă**: Sistem de alarmă cu buzzer și countdown
 - **Butoane**: 5 butoane pentru navigare și setări
 
@@ -38,6 +39,15 @@ Sistema de monitorizare meteo folosind microcontroller-ul PIC16F887 cu senzori m
 3. **SHT21**: Temperatură și umiditate SHT21
 4. **LDR**: Nivel de lumină în procente
 5. **Time**: Timpul curent sincronizat cu ESP32
+
+### WebUI
+ESP32-ul oferă o interfață web accesibilă prin browser pentru:
+- Monitorizare în timp real a datelor de la senzori
+- Vizualizare grafică a tendințelor
+- Control și configurare remotă
+- Istoric date
+
+![WebUI Screenshot](images/webui-screenshot.png)
 
 ### Sistem de Alarmă
 - Apăsarea butonului de alarmă adaugă 15 secunde
@@ -87,3 +97,27 @@ T1:25.3,H1:60,L:75,T2:25.1,H2:58
 ```
 TIME:14:30:25
 ```
+
+## Adăugare Screenshot WebUI
+
+Pentru a adăuga screenshot-ul cu WebUI-ul:
+
+1. Creează un folder `images` în directorul proiectului:
+   ```
+   mkdir images
+   ```
+
+2. Fă un screenshot al WebUI-ului și salvează-l ca `webui-screenshot.png` în folderul `images`
+
+3. Opțional, poți folosi și alte formate suportate:
+   - `webui-screenshot.jpg`
+   - `webui-screenshot.jpeg`
+   - `webui-screenshot.gif`
+
+4. Dacă vrei să adaugi mai multe imagini, poți crea o galerie:
+   ```markdown
+   ### Galerie WebUI
+   ![Dashboard](images/webui-dashboard.png)
+   ![Grafice](images/webui-charts.png)
+   ![Setări](images/webui-settings.png)
+   ```
